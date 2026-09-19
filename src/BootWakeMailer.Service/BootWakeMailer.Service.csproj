@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Windows Service host (architecture.md §3.2). Behaviour is implemented in a
-    later phase; this phase only creates the project and its x64 configuration.
+    Windows Service host (architecture.md §3.2). Owns event capture, the durable
+    queue and the 60-second retry loop.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -12,6 +12,11 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <UseWindowsService>true</UseWindowsService>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ServiceBase and PowerBroadcastStatus. Not part of the base framework. -->
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\BootWakeMailer.Shared\BootWakeMailer.Shared.csproj" />

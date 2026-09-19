@@ -1,0 +1,5 @@
+# Windows batch files must keep CRLF line endings: cmd.exe mis-parses
+# "goto :label" and multi-line parenthesised blocks in a file that uses bare LF.
+# Without this, a checkout with core.autocrlf=input or false produces broken
+# install.cmd / uninstall.cmd entry points.
+*.cmd text eol=crlf
