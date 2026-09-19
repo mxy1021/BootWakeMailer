@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Local WinForms configuration tool (architecture.md §3.3). The UI is
+    implemented in a later phase; this phase only creates the project and its
+    x64 configuration.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>BootWakeMailer.ConfigTool</RootNamespace>
+    <AssemblyName>BootWakeMailer.ConfigTool</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BootWakeMailer.Shared\BootWakeMailer.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

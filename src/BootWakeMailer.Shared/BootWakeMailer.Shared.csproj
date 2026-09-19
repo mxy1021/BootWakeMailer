@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Shared code between the Windows Service and the configuration tool.
+    It contains only file models, JSON persistence, DPAPI, paths and constants
+    (architecture.md §3.1). It must not grow into a general framework layer.
+  -->
+  <PropertyGroup>
+    <RootNamespace>BootWakeMailer.Shared</RootNamespace>
+    <AssemblyName>BootWakeMailer.Shared</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows DPAPI (FR-03). Not part of the Windows Desktop shared framework. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

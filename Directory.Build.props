@@ -1,0 +1,18 @@
+<Project>
+
+  <!--
+    Shared settings for every project in the solution.
+
+    Windows 11 x64 only (requirements.md §2), so one target framework and one
+    platform are used everywhere instead of per-project configuration.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Windows Service host (architecture.md §3.2). Behaviour is implemented in a
+    later phase; this phase only creates the project and its x64 configuration.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BootWakeMailer.Service</RootNamespace>
+    <AssemblyName>BootWakeMailer.Service</AssemblyName>
+    <!-- Self-contained win-x64 is the deployment model (requirements.md §2). -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWindowsService>true</UseWindowsService>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BootWakeMailer.Shared\BootWakeMailer.Shared.csproj" />
+  </ItemGroup>
+
+</Project>
