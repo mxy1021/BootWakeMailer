@@ -1,0 +1,104 @@
+# ==========================================
+# Build outputs
+# ==========================================
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+artifacts/
+
+# ==========================================
+# Visual Studio
+# ==========================================
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ==========================================
+# JetBrains Rider / ReSharper
+# ==========================================
+.idea/
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# ==========================================
+# Visual Studio Code
+# ==========================================
+.vscode/
+
+# ==========================================
+# Test results / coverage
+# ==========================================
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+coverage.cobertura.xml
+
+# ==========================================
+# NuGet
+# ==========================================
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+
+# Keep NuGet package lock files
+!packages.lock.json
+
+# ==========================================
+# Publish outputs
+# ==========================================
+publish/
+PublishProfiles/
+*.pubxml.user
+
+# ==========================================
+# Logs / temporary files
+# ==========================================
+*.log
+*.tmp
+*.temp
+*.bak
+*.cache
+
+# ==========================================
+# Windows
+# ==========================================
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ==========================================
+# Local secrets / environment variables
+# ==========================================
+.env
+.env.*
+!.env.example
+
+# ==========================================
+# Application secrets / local configuration
+# ==========================================
+secrets.json
+appsettings.Local.json
+appsettings.Development.local.json
+
+# ==========================================
+# Certificates / private keys
+# ==========================================
+*.pfx
+*.p12
+*.key
+*.pem
+
+# ==========================================
+# Installer/build output
+# ==========================================
+installer-output/
+setup-output/
