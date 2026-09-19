@@ -38,11 +38,17 @@ internal sealed class FakeSmtpServer : IDisposable
     private readonly List<ReceivedMessage> _messages = [];
     private readonly List<string> _connections = [];
 
-    public FakeSmtpServer(FakeSmtpServerOptions? options = null)
+    /// <param name="options">Behaviour switches for this server.</param>
+    /// <param name="port">
+    /// Port to listen on. The default, 0, lets the operating system choose one. A fixed
+    /// port lets a test make a configured server unreachable and then reachable again on
+    /// the same address.
+    /// </param>
+    public FakeSmtpServer(FakeSmtpServerOptions? options = null, int port = 0)
     {
         Options = options ?? new FakeSmtpServerOptions();
 
-        _listener = new TcpListener(IPAddress.Loopback, 0);
+        _listener = new TcpListener(IPAddress.Loopback, port);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
 

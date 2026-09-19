@@ -1,4 +1,5 @@
 using System.Net.Mail;
+using MimeKit;
 
 namespace BootWakeMailer.Shared;
 
@@ -72,6 +73,21 @@ public static class ConfigValidator
     /// <summary>Convenience wrapper over <see cref="Validate"/>.</summary>
     public static bool IsValid(AppConfig? config) => Validate(config).Count == 0;
 
+    /// <summary>
+    /// Checks that <paramref name="value"/> is one mailbox the send path can build a
+    /// message from.
+    /// </summary>
+    /// <remarks>
+    /// Both parsers are required, because neither is a subset of the other:
+    /// <see cref="MailAddress"/> rejects an address without a domain, which MimeKit
+    /// accepts, while MimeKit rejects a comma-separated list or an unquoted space, which
+    /// <see cref="MailAddress"/> accepts. Validating with one parser only would report a
+    /// configuration as usable that <see cref="MailMessageFactory"/> can never build a
+    /// message from, so the send would fail on every retry with a parse error instead of
+    /// the problem being reported when the configuration is saved.
+    /// </remarks>
     private static bool IsMailAddress(string? value) =>
-        !string.IsNullOrWhiteSpace(value) && MailAddress.TryCreate(value, out _);
+        !string.IsNullOrWhiteSpace(value)
+        && MailAddress.TryCreate(value, out _)
+        && MailboxAddress.TryParse(value, out _);
 }

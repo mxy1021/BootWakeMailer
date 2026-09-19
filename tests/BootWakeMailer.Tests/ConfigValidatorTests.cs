@@ -1,4 +1,5 @@
 using BootWakeMailer.Shared;
+using MimeKit;
 
 namespace BootWakeMailer.Tests;
 
@@ -112,6 +113,43 @@ public class ConfigValidatorTests
         config.ToAddress = address;
 
         Assert.Contains("Recipient address is not a valid email address.", ConfigValidator.Validate(config));
+    }
+
+    [Theory]
+    [InlineData("recipient@example.com, other@example.com")]
+    [InlineData("Recipient <recipient@example.com>, Other <other@example.com>")]
+    [InlineData("a b@example.com")]
+    public void Validate_ReportsAnAddressThatIsNotASingleMailbox(string address)
+    {
+        // System.Net.Mail accepts a comma-separated list and an unquoted space, but the
+        // message is built with MimeKit, which cannot parse either. Reporting such a
+        // configuration as valid would leave the notification pending on every retry
+        // instead of naming the problem while the configuration is being saved.
+        var config = ValidConfig();
+        config.ToAddress = address;
+
+        Assert.False(ConfigValidator.IsValid(config));
+        Assert.Contains("Recipient address is not a valid email address.", ConfigValidator.Validate(config));
+    }
+
+    [Theory]
+    [InlineData("Sender Name <sender@example.com>")]
+    [InlineData("\"Quoted Name\" <sender@example.com>")]
+    public void Validate_AcceptsADisplayNameAddressThatTheSendPathCanUse(string address)
+    {
+        var config = ValidConfig();
+        config.FromAddress = address;
+
+        Assert.Empty(ConfigValidator.Validate(config));
+
+        // Both parsers are required so that a configuration reported as valid is always
+        // one MailMessageFactory can actually build a message from.
+        var message = MailMessageFactory.CreateNotification(
+            config,
+            PendingMailEvent.Create(MailEventType.Startup, "ZEN-PC"));
+
+        var mailbox = Assert.IsType<MailboxAddress>(Assert.Single(message.From));
+        Assert.Equal("sender@example.com", mailbox.Address);
     }
 
     [Fact]

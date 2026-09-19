@@ -173,12 +173,19 @@ function Assert-PackagePayload {
     <#
         Fails the build when the package would not be installable, most
         importantly when the runtime is missing from a publish output.
+
+        The two roots are separate: the applications live under <package>\app,
+        which install.ps1 resolves as its payload, while the entry points sit at
+        the package root.
     #>
-    param([Parameter(Mandatory)][string] $PackageRoot)
+    param(
+        [Parameter(Mandatory)][string] $PayloadRoot,
+        [Parameter(Mandatory)][string] $PackageRoot
+    )
 
     $expectedFiles = @(
-        (Join-Path (Join-Path $PackageRoot $script:ServiceSubDirectory) $script:ServiceExeName),
-        (Join-Path (Join-Path $PackageRoot $script:ConfigToolSubDirectory) $script:ConfigToolExeName)
+        (Join-Path (Join-Path $PayloadRoot $script:ServiceSubDirectory) $script:ServiceExeName),
+        (Join-Path (Join-Path $PayloadRoot $script:ConfigToolSubDirectory) $script:ConfigToolExeName)
     )
 
     foreach ($file in $expectedFiles) {
@@ -188,7 +195,7 @@ function Assert-PackagePayload {
     }
 
     foreach ($sub in @($script:ServiceSubDirectory, $script:ConfigToolSubDirectory)) {
-        $marker = Join-Path (Join-Path $PackageRoot $sub) $script:SelfContainedMarker
+        $marker = Join-Path (Join-Path $PayloadRoot $sub) $script:SelfContainedMarker
         if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
             throw ('"{0}" is not self-contained ("{1}" is missing). The target machine would need the .NET runtime installed.' -f $sub, $script:SelfContainedMarker)
         }
@@ -300,7 +307,7 @@ try {
 
     Write-Step 'Verifying the package'
 
-    Assert-PackagePayload -PackageRoot $OutputDirectory
+    Assert-PackagePayload -PayloadRoot $appRoot -PackageRoot $OutputDirectory
     Write-Log 'Every expected file is present and both applications are self-contained.'
 
     $serviceSize = Get-DirectorySize -Path (Join-Path $appRoot $script:ServiceSubDirectory)
