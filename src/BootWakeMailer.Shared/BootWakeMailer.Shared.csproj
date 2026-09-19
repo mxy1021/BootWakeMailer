@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <!-- Windows DPAPI (FR-03). Not part of the Windows Desktop shared framework. -->
+    <PackageReference Include="MailKit" Version="4.18.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
   </ItemGroup>
 

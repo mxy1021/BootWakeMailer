@@ -14,6 +14,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\BootWakeMailer.Shared\BootWakeMailer.Shared.csproj" />
+    <!-- The durable queue lives in the service project (architecture.md §3.2), so the
+         queue processor is tested where it is implemented. -->
+    <ProjectReference Include="..\..\src\BootWakeMailer.Service\BootWakeMailer.Service.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -20,4 +20,16 @@ public static class AppConstants
 
     /// <summary>Name of the application data directory under %ProgramData%.</summary>
     public const string DataDirectoryName = "BootWakeMailer";
+
+    /// <summary>
+    /// Fixed automatic retry interval for pending tasks (FR-06). Retries continue
+    /// without a maximum attempt count.
+    /// </summary>
+    public const int RetryIntervalSeconds = 60;
+
+    /// <summary>
+    /// Upper bound for one complete SMTP send attempt, so a hung or unreachable server
+    /// cannot block queue processing indefinitely.
+    /// </summary>
+    public const int SmtpSendTimeoutSeconds = 30;
 }
