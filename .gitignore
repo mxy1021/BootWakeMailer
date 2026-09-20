@@ -102,5 +102,32 @@ appsettings.Development.local.json
 # ==========================================
 installer-output/
 setup-output/
-# Claude Code worktrees
+
+# ==========================================
+# Stray empty solution stub
+# ==========================================
+# Visual Studio sometimes drops an empty BootWakeMailer.slnx stub next to the
+# real .sln. MSBuild counts any .slnx/.sln as a solution file even when it
+# contains no projects, so two of them make the target ambiguous and bare
+# `dotnet build` fails with MSB1011. This has been committed by accident
+# before. If the project ever migrates to the .slnx format for real, drop
+# this rule first.
+*.slnx
+
+# ==========================================
+# Merge / rebase leftovers
+# ==========================================
+*.orig
+*.rej
+
+# ==========================================
+# Claude Code
+# ==========================================
 .claude/worktrees/
+.claude/settings.local.json
+.claude/*.local.json
+
+# ==========================================
+# macOS
+# ==========================================
+.DS_Store
