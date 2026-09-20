@@ -164,7 +164,9 @@ public sealed class SmtpMailSender : IMailSender
         }
         catch (Exception)
         {
-            // Best effort only; the outcome of the send has already been decided.
+            // Best effort only; the outcome of the send has already been decided. MailKit
+            // already absorbs a QUIT that the server never answers, so this covers only the
+            // remaining ways a socket teardown can fail (architecture.md §10.7, §14.9).
         }
     }
 }

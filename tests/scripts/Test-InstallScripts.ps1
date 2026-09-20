@@ -373,6 +373,61 @@ function Test-Install {
         Assert-FileExists (Join-Path $installDirectory 'service\BootWakeMailer.Service.exe')
     }
 
+    Invoke-TestCase -Name 'install.ps1 retries while a file in the previous installation is still open' -Body {
+        # A scanner, an editor or a shell whose working directory is inside the folder can
+        # hold a file open while the installation is replaced. Without the retry the removal
+        # aborts part way through, which breaks the installation that was working.
+        $lockedFile = Join-Path $installDirectory 'service\BootWakeMailer.Service.exe'
+        Assert-FileExists $lockedFile
+
+        # The path travels in an environment variable, so the helper needs no quoting of its
+        # own and the lock is taken before the install below starts. The command is written
+        # with single quotes: Start-Process passes the argument list through the Windows
+        # command line, which consumes double quotes and would corrupt the call.
+        $env:BWM_TEST_LOCKED_FILE = $lockedFile
+        $locker = Start-Process -FilePath (Get-Process -Id $PID).Path -PassThru -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile', '-Command',
+            '$s = [System.IO.File]::Open($env:BWM_TEST_LOCKED_FILE, ''Open'', ''Read'', ''None''); Start-Sleep -Seconds 3; $s.Dispose()'
+        )
+
+        try {
+            $deadline = (Get-Date).AddSeconds(30)
+            while ($true) {
+                $probe = $null
+                try {
+                    $probe = [System.IO.File]::Open($lockedFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
+                }
+                catch {
+                    break
+                }
+                finally {
+                    if ($null -ne $probe) { $probe.Dispose() }
+                }
+
+                if ((Get-Date) -gt $deadline) { throw 'The helper process never locked the file.' }
+                Start-Sleep -Milliseconds 50
+            }
+
+            $result = Invoke-Script -ScriptPath $script:InstallScript -Arguments @(
+                '-SourceDirectory', $payload,
+                '-InstallDirectory', $installDirectory,
+                '-DataDirectory', $dataDirectory,
+                '-ServiceName', $serviceName,
+                '-SkipServiceRegistration',
+                '-NoElevate'
+            )
+        }
+        finally {
+            Remove-Item Env:\BWM_TEST_LOCKED_FILE -ErrorAction SilentlyContinue
+            Wait-Process -Id $locker.Id -Timeout 30 -ErrorAction SilentlyContinue
+        }
+
+        Assert-True ($result.ExitCode -eq 0) ('Expected exit code 0 while a file was briefly locked, got {0}. Output: {1}' -f $result.ExitCode, $result.Output)
+        Assert-True ($result.Output -like '*still in use*') ('The removal was not retried. Output: {0}' -f $result.Output)
+        Assert-FileExists (Join-Path $installDirectory 'service\BootWakeMailer.Service.exe')
+        Assert-FileExists (Join-Path $installDirectory 'configtool\BootWakeMailer.ConfigTool.exe')
+    }
+
     Invoke-TestCase -Name 'install.ps1 rejects a payload that is not self-contained' -Body {
         $incompletePayload = New-FakePayload -PayloadRoot (New-TestDirectory -Name 'payload without runtime') -WithoutRuntime
         $target = Join-Path -Path $script:TestRoot -ChildPath 'never installed\BootWakeMailer'

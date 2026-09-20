@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using BootWakeMailer.Shared;
 using MailKit.Security;
 using MimeKit;
@@ -112,7 +110,7 @@ public class SmtpMailSenderTests
     [Fact]
     public async Task SendAsync_FailsQuicklyWhenNothingIsListening()
     {
-        var port = UnusedLoopbackPort();
+        var port = FakeSmtpServer.UnusedLoopbackPort();
         var config = TestConfig.Create(host: "127.0.0.1", port: port, username: TestConfig.FromAddress);
         var sender = new SmtpMailSender(TimeSpan.FromSeconds(5));
 
@@ -125,6 +123,29 @@ public class SmtpMailSenderTests
         Assert.True(
             stopwatch.Elapsed < TimeSpan.FromSeconds(10),
             $"A refused connection must fail fast, but took {stopwatch.Elapsed}.");
+    }
+
+    [Fact]
+    public async Task SendAsync_SucceedsWhenTheServerStopsAnsweringAfterAccepting()
+    {
+        using var server = new FakeSmtpServer(
+            new FakeSmtpServerOptions { AdvertiseAuthentication = true, HangAfterAccept = true });
+        var config = TestConfig.ForServer(server, TestConfig.FromAddress, "app-password");
+        var sender = new SmtpMailSender(GenerousTimeout);
+
+        var stopwatch = Stopwatch.StartNew();
+
+        // The server accepted the message, which is what makes a send successful (FR-07). A
+        // server that then stops answering cannot complete the QUIT, and that cleanup failure
+        // must neither be reported as a failed send nor hold the queue processor for longer
+        // than the cleanup timeout (architecture.md §10.7, §14.9).
+        await sender.SendAsync(config, Notification(config), CancellationToken.None);
+
+        stopwatch.Stop();
+        Assert.Single(server.Messages);
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(5),
+            $"The send waited for an unresponsive server, which took {stopwatch.Elapsed}.");
     }
 
     [Fact]
@@ -208,14 +229,4 @@ public class SmtpMailSenderTests
 
     private static MimeMessage MimeMessage() =>
         new() { Subject = "unused", Body = new TextPart(TextFormat.Plain) { Text = "unused" } };
-
-    /// <summary>A loopback port that was just released, so nothing is listening on it.</summary>
-    private static int UnusedLoopbackPort()
-    {
-        var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-        return port;
-    }
 }

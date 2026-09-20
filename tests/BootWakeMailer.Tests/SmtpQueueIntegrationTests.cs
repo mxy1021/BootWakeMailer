@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.Sockets;
 using BootWakeMailer.Service;
 using BootWakeMailer.Shared;
 
@@ -56,7 +54,7 @@ public class SmtpQueueIntegrationTests
 
         // Nothing is listening on this port yet, so the first attempt is a real refused
         // connection rather than a configured failure.
-        var port = UnusedLoopbackPort();
+        var port = FakeSmtpServer.UnusedLoopbackPort();
         TestConfig.Write(
             paths,
             TestConfig.Create(host: "127.0.0.1", port: port, username: TestConfig.FromAddress, password: Password));
@@ -66,7 +64,7 @@ public class SmtpQueueIntegrationTests
 
         var failed = await processor.ProcessOnceAsync(CancellationToken.None);
 
-        // The task stays pending with its attempt on record (requirements 6 and 9).
+        // The task stays pending with its attempt on record (FR-05).
         Assert.Equal(QueueCycleOutcome.Failed, failed.Outcome);
         var pending = Assert.Single(QueueStore.Load(paths.QueueFilePath).Items);
         Assert.Equal(1, pending.AttemptCount);
@@ -75,7 +73,7 @@ public class SmtpQueueIntegrationTests
         Assert.Equal("SmtpSend", StatusStore.Load(paths.StatusFilePath).LastError!.Operation);
 
         // The network comes back on the same address, and the automatic retry loop is the
-        // only thing that sends the task (requirement 7).
+        // only thing that sends the task (FR-06).
         using var server = new FakeSmtpServer(new FakeSmtpServerOptions { AdvertiseAuthentication = true }, port);
 
         using var cancellation = new CancellationTokenSource();
@@ -109,7 +107,7 @@ public class SmtpQueueIntegrationTests
         var loop = processor.RunAsync(cancellation.Token);
 
         // The rejected login must not end the retry loop: it keeps attempting until the
-        // service is stopped (requirement 10).
+        // service is stopped (FR-05, architecture.md §14.1).
         await Wait.UntilAsync(
             () => QueueStore.Load(paths.QueueFilePath).Items.SingleOrDefault()?.AttemptCount >= 2,
             TimeSpan.FromSeconds(30));
@@ -137,15 +135,5 @@ public class SmtpQueueIntegrationTests
         Assert.Equal(QueueCycleOutcome.Completed, sent.Outcome);
         Assert.Empty(QueueStore.Load(paths.QueueFilePath).Items);
         Assert.Single(accepting.Messages);
-    }
-
-    /// <summary>A loopback port that was just released, so nothing is listening on it.</summary>
-    private static int UnusedLoopbackPort()
-    {
-        var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-        return port;
     }
 }

@@ -15,6 +15,13 @@ internal sealed class FakeSmtpServerOptions
 
     /// <summary>Accept the offered credentials; when false the server answers 535.</summary>
     public bool AcceptAuthentication { get; init; } = true;
+
+    /// <summary>
+    /// Accept the message and then stop answering, so the client's QUIT can never complete.
+    /// Models a server that has taken responsibility for a message and then becomes
+    /// unresponsive.
+    /// </summary>
+    public bool HangAfterAccept { get; init; }
 }
 
 /// <summary>One message the fake server accepted.</summary>
@@ -102,6 +109,20 @@ internal sealed class FakeSmtpServer : IDisposable
         }
 
         _cancellation.Dispose();
+    }
+
+    /// <summary>
+    /// A loopback port that was just released, so nothing is listening on it. Tests point a
+    /// configuration at it to produce a real refused connection, and can later start a server
+    /// on the same port to let the configuration become reachable.
+    /// </summary>
+    public static int UnusedLoopbackPort()
+    {
+        var probe = new TcpListener(IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+        return port;
     }
 
     private async Task AcceptLoopAsync(CancellationToken cancellationToken)
@@ -214,6 +235,13 @@ internal sealed class FakeSmtpServer : IDisposable
                 }
 
                 await ReplyAsync(writer, "250 2.0.0 Ok: queued as fake").ConfigureAwait(false);
+
+                if (Options.HangAfterAccept)
+                {
+                    // Hold the connection open without answering, so the QUIT that follows
+                    // the acceptance can never complete.
+                    await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+                }
             }
             else if (StartsWith(line, "QUIT"))
             {

@@ -62,6 +62,13 @@ $script:ExitSuccess = 0
 $script:ExitFailure = 1
 $script:ExitElevation = 2
 
+# A file in the installation can stay open for a moment after the service was stopped: a
+# scanner, an editor, or a shell whose working directory is inside the folder. Removing
+# part of the tree and then failing would leave the application half removed, so the
+# removal is retried briefly before it is reported as failed.
+$script:RemoveAttempts = 10
+$script:RemoveRetryDelayMilliseconds = 400
+
 function Write-Log {
     param(
         [Parameter(Mandatory)][string] $Message,
@@ -193,8 +200,35 @@ function Remove-DirectoryIfPresent {
     $safePath = Assert-SafeDirectoryToDelete -Path $Path -ParameterName $ParameterName
 
     if ($Cmdlet.ShouldProcess($safePath, ('Remove {0}' -f $Description))) {
-        Remove-Item -LiteralPath $safePath -Recurse -Force
+        Remove-DirectoryWithRetry -Path $safePath
         Write-Log ('Removed {0}: {1}' -f $Description, $safePath)
+    }
+}
+
+function Remove-DirectoryWithRetry {
+    <#
+        Removes a directory tree, retrying briefly while a file inside it is still open.
+
+        Remove-Item aborts at the first file it cannot delete, which can leave the tree
+        partially removed. The retry covers the transient case; a directory that stays
+        locked still fails after the attempts are used up, with the same error the caller
+        would otherwise have seen.
+    #>
+    param([Parameter(Mandatory)][string] $Path)
+
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+            return
+        }
+        catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+            if ($attempt -ge $script:RemoveAttempts) {
+                throw
+            }
+
+            Write-Log ('"{0}" is still in use; retrying the removal ({1} of {2}).' -f $Path, $attempt, $script:RemoveAttempts) 'WARN'
+            Start-Sleep -Milliseconds $script:RemoveRetryDelayMilliseconds
+        }
     }
 }
 

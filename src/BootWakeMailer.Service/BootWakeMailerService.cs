@@ -16,7 +16,7 @@ namespace BootWakeMailer.Service;
 /// <para>
 /// No callback on this class performs SMTP. <c>OnStart</c>, <c>OnPowerEvent</c> and
 /// <c>OnCustomCommand</c> only record an event or wake the background worker, so none of
-/// them can block on network I/O (FR-10, FR-11, FR-17).
+/// them can block on network I/O (architecture.md §8.6, §9.5, §12).
 /// </para>
 /// <para>
 /// There is no retry timer here: <see cref="QueueProcessor.RunAsync"/> owns both the
@@ -71,7 +71,7 @@ public sealed class BootWakeMailerService : ServiceBase
             // Started before the first event is recorded, so a queue file that cannot be
             // written still leaves a running worker to drain whatever is already on disk.
             // The loop's first cycle is immediate, so it also picks up anything a previous
-            // run left in queue.json (FR-13).
+            // run left in queue.json (FR-05).
             _worker = Task.Run(RunWorkerAsync);
 
             // Persists the task and wakes the worker. A failure here is recorded in
@@ -87,7 +87,7 @@ public sealed class BootWakeMailerService : ServiceBase
 
     /// <summary>
     /// Records a resume notification for <see cref="PowerBroadcastStatus.ResumeAutomatic"/>
-    /// and ignores every other status (FR-02, FR-07, FR-09).
+    /// and ignores every other status (FR-02, architecture.md §9).
     /// </summary>
     /// <returns>
     /// Always <c>true</c>. Returning <c>false</c> for a query or suspend notification would
@@ -101,7 +101,7 @@ public sealed class BootWakeMailerService : ServiceBase
             if (powerStatus == PowerBroadcastStatus.ResumeAutomatic)
             {
                 // Records the task and wakes the worker. No SMTP happens on this thread
-                // (FR-10, FR-11).
+                // (architecture.md §9.3).
                 _processor.Enqueue(MailEventType.ResumeAutomatic);
             }
         }
@@ -116,7 +116,7 @@ public sealed class BootWakeMailerService : ServiceBase
 
     /// <summary>
     /// Handles the immediate-retry command and ignores all other custom commands
-    /// (FR-16, FR-17).
+    /// (architecture.md §12).
     /// </summary>
     protected override void OnCustomCommand(int command)
     {
@@ -125,7 +125,7 @@ public sealed class BootWakeMailerService : ServiceBase
             if (command == AppConstants.ImmediateRetryCommand)
             {
                 // Only wakes the worker; the SMTP work is done by the background loop
-                // (FR-17).
+                // (architecture.md §12).
                 _processor.RequestImmediateProcessing();
             }
         }
@@ -159,7 +159,9 @@ public sealed class BootWakeMailerService : ServiceBase
     /// file error in status.json, and returns instead of throwing when the token is
     /// cancelled (architecture.md §14.1). Only a genuinely unexpected fault reaches the
     /// handler below, and that is swallowed for the same reason: a background thread must
-    /// not take the process down.
+    /// not take the process down. The fault itself is already in status.json, so the
+    /// configuration tool shows that processing stopped instead of the failure being
+    /// invisible (architecture.md §14.3).
     /// </remarks>
     private async Task RunWorkerAsync()
     {
@@ -173,12 +175,13 @@ public sealed class BootWakeMailerService : ServiceBase
         }
         catch (Exception)
         {
-            // See the remarks: normal failures are recorded where they happen.
+            // Recorded by RunAsync before it rethrew; swallowing here only protects the
+            // process from a background-thread fault (architecture.md §14.1).
         }
     }
 
     /// <summary>
-    /// Cancels the worker token and waits briefly for an in-flight send to unwind (FR-15).
+    /// Cancels the worker token and waits briefly for an in-flight send to unwind.
     /// </summary>
     private void StopProcessing()
     {
@@ -193,13 +196,13 @@ public sealed class BootWakeMailerService : ServiceBase
             _stopping.Cancel();
 
             // Bounded: the SCM waits for OnStop to return, and queue writes are atomic, so
-            // an unfinished attempt can safely be left for the next service start (FR-15).
+            // an unfinished attempt can safely be left for the next service start.
             _worker?.Wait(StopTimeout);
         }
         catch (Exception)
         {
             // The attempt counter is already on disk, so the pending task survives to the
-            // next start (requirement 14).
+            // next start (FR-05).
         }
     }
 }

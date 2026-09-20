@@ -7,7 +7,8 @@ namespace BootWakeMailer.Tests;
 
 /// <summary>
 /// The Windows Service host: the SCM wiring that can be asserted without a Service
-/// Control Manager, and the two event sources the callbacks feed (FR-01, FR-02, FR-16).
+/// Control Manager, and the two event sources the callbacks feed (FR-01, FR-02,
+/// architecture.md §12).
 /// </summary>
 /// <remarks>
 /// <see cref="ServiceBase"/> exposes its callbacks as protected members and the SCM is
@@ -59,7 +60,7 @@ public sealed class BootWakeMailerServiceTests
     [Fact]
     public void PowerEventsAreHandled_AndSessionsAreNot()
     {
-        // FR-07 requires CanHandlePowerEvent; session-change events are explicitly out of
+        // FR-02 requires CanHandlePowerEvent; session-change events are explicitly out of
         // scope.
         using var temp = new TempDirectory();
         using var context = Create(temp);
@@ -94,7 +95,7 @@ public sealed class BootWakeMailerServiceTests
         using var temp = new TempDirectory();
         using var context = Create(temp);
 
-        // Always true: a power callback must not veto the transition (FR-09).
+        // Always true: a power callback must not veto the transition (architecture.md §9).
         Assert.True(PowerEvent(context.Service, PowerBroadcastStatus.ResumeAutomatic));
 
         var item = Assert.Single(Queue(context.Paths).Items);
@@ -113,7 +114,7 @@ public sealed class BootWakeMailerServiceTests
     [InlineData(PowerBroadcastStatus.OemEvent)]
     public void EveryOtherPowerStatus_RecordsNothing(PowerBroadcastStatus status)
     {
-        // Only a resume is a notification (FR-02, FR-07).
+        // Only a resume is a notification (FR-02).
         using var temp = new TempDirectory();
         using var context = Create(temp);
 
@@ -131,7 +132,7 @@ public sealed class BootWakeMailerServiceTests
     [InlineData(255)]
     public void CustomCommandsOtherThanTheImmediateRetry_DoNothing(int command)
     {
-        // FR-16: only command 128 is this service's.
+        // architecture.md §12: only command 128 is this service's.
         using var temp = new TempDirectory();
         using var context = Create(temp);
 
@@ -144,8 +145,8 @@ public sealed class BootWakeMailerServiceTests
     [Fact]
     public void TheImmediateRetryCommand_DoesNotPerformSmtpOnTheScmThread()
     {
-        // FR-17: the command only wakes the worker. With no worker started here, nothing
-        // is sent and nothing is queued.
+        // architecture.md §12: the command only wakes the worker. With no worker started
+        // here, nothing is sent and nothing is queued.
         using var temp = new TempDirectory();
         using var context = Create(temp);
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using BootWakeMailer.Service;
 using BootWakeMailer.Shared;
@@ -7,7 +8,7 @@ namespace BootWakeMailer.Tests;
 /// <summary>
 /// The durable queue: a task is persisted before it is sent, removed only after the SMTP
 /// server accepts it, retried in FIFO order on a fixed interval, and never lost by a
-/// failure, a concurrent event or a service restart (FR-05, FR-06, requirements 7-14).
+/// failure, a concurrent event or a service restart (FR-05, FR-06).
 /// </summary>
 public class QueueProcessorTests
 {
@@ -235,7 +236,7 @@ public class QueueProcessorTests
         Assert.Equal(0, result.SentCount);
         Assert.Equal("SMTP connection failed", result.Error);
 
-        // The task is not deleted (requirement 9).
+        // The task is not deleted (FR-05).
         var stored = Assert.Single(Queue(context.Paths).Items);
         Assert.Equal(1, stored.AttemptCount);
         Assert.NotNull(stored.LastAttemptAtUtc);
@@ -294,7 +295,7 @@ public class QueueProcessorTests
         var result = await context.Processor.ProcessOnceAsync(CancellationToken.None);
 
         // The cycle stops on the first failure (architecture.md §11.8), but the tasks
-        // behind it are untouched and still pending (requirement 13).
+        // behind it are untouched and still pending (FR-05, architecture.md §11.7).
         Assert.Equal(QueueCycleOutcome.Failed, result.Outcome);
         Assert.Equal(1, context.Sender.AttemptCount);
 
@@ -479,7 +480,7 @@ public class QueueProcessorTests
         var result = await cycle;
 
         // The task is still pending, its attempt counter is on disk, and the shutdown is
-        // not recorded as an SMTP error (architecture.md §14.9, requirement 14).
+        // not recorded as an SMTP error (architecture.md §14.9, FR-05).
         Assert.Equal(QueueCycleOutcome.Canceled, result.Outcome);
         Assert.Equal(0, result.SentCount);
         Assert.Equal(1, Assert.Single(Queue(context.Paths).Items).AttemptCount);
@@ -609,6 +610,50 @@ public class QueueProcessorTests
     }
 
     [Fact]
+    public async Task RunAsync_KeepsTheRetryScheduleWhenAnImmediateRequestCutsTheWaitShort()
+    {
+        using var temp = new TempDirectory();
+        // A two-second cadence separates the two possible schedules clearly: the third
+        // attempt is due one interval after the loop started, while a schedule that also
+        // advanced for the interrupted wait would put it two intervals out.
+        using var context = Create(temp, retryInterval: TimeSpan.FromSeconds(2));
+        TestConfig.Write(context.Paths, TestConfig.Create());
+        context.Sender.FailureFactory = FakeMailSender.AlwaysFails(() => new IOException("offline"));
+
+        // Placed directly, not through Enqueue, so the first cycle consumes its own tick
+        // with no immediate-processing request pending.
+        QueueStore.Save(
+            context.Paths.QueueFilePath,
+            new QueueDocument { Items = [PendingMailEvent.Create(MailEventType.Startup, ComputerName, T0)] });
+
+        using var cancellation = new CancellationTokenSource();
+        var stopwatch = Stopwatch.StartNew();
+        var loop = context.Processor.RunAsync(cancellation.Token);
+
+        try
+        {
+            await Wait.UntilAsync(() => context.Sender.AttemptCount >= 1);
+
+            // New work arrives while the loop is waiting for its next tick. It must be
+            // processed at once, without pushing the tick it interrupted a whole interval
+            // further out (FR-06).
+            context.Processor.Enqueue(MailEventType.ResumeAutomatic, T1);
+
+            await Wait.UntilAsync(() => context.Sender.AttemptCount >= 3, TimeSpan.FromSeconds(10));
+            stopwatch.Stop();
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await loop;
+        }
+
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(3),
+            $"Three attempts took {stopwatch.Elapsed}, so the retry schedule slipped past its tick.");
+    }
+
+    [Fact]
     public async Task ProcessOnceAsync_DoesNotSendAnAcceptedTaskAgainWhenItsRemovalFailed()
     {
         using var temp = new TempDirectory();
@@ -644,6 +689,32 @@ public class QueueProcessorTests
         Assert.Equal(QueueCycleOutcome.Completed, next.Outcome);
         Assert.Empty(Queue(context.Paths).Items);
         Assert.Equal(1, context.Sender.AttemptCount);
+    }
+
+    [Fact]
+    public async Task ProcessOnceAsync_RemovesAnAcceptedTaskWhenTheStatusFileCannotBeUsed()
+    {
+        using var temp = new TempDirectory();
+        using var context = Create(temp);
+        TestConfig.Write(context.Paths, TestConfig.Create());
+
+        // A directory where status.json belongs makes every status read and write fail.
+        Directory.CreateDirectory(context.Paths.StatusFilePath);
+        // The setup must really leave the status document unusable, or this test proves
+        // nothing: the read fails before any write is attempted.
+        Assert.ThrowsAny<Exception>(() => StatusStore.Load(context.Paths.StatusFilePath));
+
+        context.Processor.Enqueue(MailEventType.Startup, T0);
+
+        var result = await context.Processor.ProcessOnceAsync(CancellationToken.None);
+
+        // The SMTP server accepted the message, so the notification is done. Status is
+        // advisory: a status file that cannot be used must not turn an accepted notification
+        // back into a pending task (architecture.md §10.7, §14.9).
+        Assert.Equal(QueueCycleOutcome.Completed, result.Outcome);
+        Assert.Equal(1, result.SentCount);
+        Assert.Empty(Queue(context.Paths).Items);
+        Assert.Single(context.Sender.Accepted);
     }
 
     [Fact]

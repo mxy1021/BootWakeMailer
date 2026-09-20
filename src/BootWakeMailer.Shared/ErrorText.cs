@@ -73,5 +73,11 @@ public static class ErrorText
 
         /// <summary>Reading or writing <c>status.json</c>.</summary>
         public const string StatusFile = "StatusFile";
+
+        /// <summary>
+        /// A fault in the queue-processing loop itself, rather than in one of the operations
+        /// above. Recorded so a loop that stopped draining the queue is not silent.
+        /// </summary>
+        public const string QueueWorker = "QueueWorker";
     }
 }

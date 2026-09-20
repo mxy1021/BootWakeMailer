@@ -83,6 +83,13 @@ $script:ConfigToolExeName = 'BootWakeMailer.ConfigTool.exe'
 # makes the target machine independent of an installed .NET runtime.
 $script:SelfContainedMarker = 'coreclr.dll'
 
+# A file in the previous installation can stay open for a moment after the service was
+# stopped: a scanner, an editor, or a shell whose working directory is inside the folder.
+# Removing part of the tree and then failing would break the installation that is being
+# replaced, so the removal is retried briefly before it is reported as failed.
+$script:RemoveAttempts = 10
+$script:RemoveRetryDelayMilliseconds = 400
+
 $script:ServiceDescription = 'Sends an email notification when Windows starts or resumes from sleep.'
 
 function Write-Log {
@@ -244,6 +251,33 @@ function Assert-SafeDirectoryToDelete {
     return $full
 }
 
+function Remove-DirectoryWithRetry {
+    <#
+        Removes a directory tree, retrying briefly while a file inside it is still open.
+
+        Remove-Item aborts at the first file it cannot delete, which can leave the tree
+        partially removed and the installed service pointing at missing files. The retry
+        covers the transient case; a directory that stays locked still fails after the
+        attempts are used up, with the same error the caller would otherwise have seen.
+    #>
+    param([Parameter(Mandatory)][string] $Path)
+
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+            return
+        }
+        catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+            if ($attempt -ge $script:RemoveAttempts) {
+                throw
+            }
+
+            Write-Log ('"{0}" is still in use; retrying the removal ({1} of {2}).' -f $Path, $attempt, $script:RemoveAttempts) 'WARN'
+            Start-Sleep -Milliseconds $script:RemoveRetryDelayMilliseconds
+        }
+    }
+}
+
 # ---------------------------------------------------------------------------
 # 1. Administrator privileges
 # ---------------------------------------------------------------------------
@@ -374,7 +408,7 @@ try {
     if ($PSCmdlet.ShouldProcess($InstallDirectory, 'Replace the installed application files')) {
         if ($previousInstallationExists) {
             Write-Log ('Removing the previous installation in {0}.' -f $InstallDirectory)
-            Remove-Item -LiteralPath $InstallDirectory -Recurse -Force
+            Remove-DirectoryWithRetry -Path $InstallDirectory
         }
 
         New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null

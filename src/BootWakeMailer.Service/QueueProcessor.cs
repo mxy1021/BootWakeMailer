@@ -12,7 +12,7 @@ namespace BootWakeMailer.Service;
 /// <b>Persist before send.</b> <see cref="Enqueue"/> writes the task to disk before it
 /// raises the processing request, and a processing cycle increments the attempt counter
 /// on disk before it touches the network. A task therefore survives a crash, a service
-/// stop or a Windows shutdown at any point (FR-05, requirement 14).
+/// stop or a Windows shutdown at any point (FR-05).
 /// </para>
 /// <para>
 /// <b>At least once.</b> A task is removed only after the SMTP server has accepted the
@@ -27,10 +27,10 @@ namespace BootWakeMailer.Service;
 /// and each write replaces the file atomically (architecture.md §4).
 /// </para>
 /// <para>
-/// <b>Not in this phase.</b> The Windows Service host, the power-event source and the
-/// custom retry command are not implemented here. <see cref="Enqueue"/> is the entry
-/// point a Startup or ResumeAutomatic event will call, and
-/// <see cref="RequestImmediateProcessing"/> is the entry point command 128 will call.
+/// <see cref="BootWakeMailerService"/> is the only caller: it records a Startup or
+/// ResumeAutomatic event through <see cref="Enqueue"/> and requests a retry through
+/// <see cref="RequestImmediateProcessing"/> (command 128). Everything that happens to the
+/// queue afterwards is owned here.
 /// </para>
 /// </remarks>
 public sealed class QueueProcessor : IDisposable
@@ -47,7 +47,7 @@ public sealed class QueueProcessor : IDisposable
     /// </summary>
     private readonly Lock _stateGate = new();
 
-    /// <summary>Allows only one processing cycle at a time (requirement 11).</summary>
+    /// <summary>Allows only one processing cycle at a time (architecture.md §11).</summary>
     private readonly SemaphoreSlim _cycleGate = new(1, 1);
 
     /// <summary>
@@ -198,9 +198,18 @@ public sealed class QueueProcessor : IDisposable
     /// cadence until <paramref name="cancellationToken"/> is cancelled (FR-06).
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This is the retry loop. It returns instead of throwing when the token is
     /// cancelled, so a stopping service ends the loop without an exception
     /// (architecture.md §14.1).
+    /// </para>
+    /// <para>
+    /// A fault the loop cannot handle itself leaves the queue undrained for as long as the
+    /// process lives. Such a fault is therefore recorded in <c>status.json</c> before it is
+    /// rethrown, so the configuration tool can show why processing stopped
+    /// (architecture.md §14.3). A cancelled token and a gate disposed by a stopping
+    /// service are not faults and are not recorded.
+    /// </para>
     /// </remarks>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -208,24 +217,40 @@ public sealed class QueueProcessor : IDisposable
 
         var nextTickUtc = DateTime.UtcNow;
 
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            // The loop waits for the queue instead of skipping a cycle, so a request that
-            // woke it is never dropped because someone else held the gate at that instant.
-            await ProcessCycleAsync(cancellationToken).ConfigureAwait(false);
-
-            var now = DateTime.UtcNow;
-            nextTickUtc += _retryInterval;
-
-            if (nextTickUtc <= now)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                // The cycle outlasted its own tick. Wait a whole interval from here rather
-                // than starting the next attempt immediately, so the retry cadence never
-                // turns into back-to-back attempts.
-                nextTickUtc = now + _retryInterval;
-            }
+                // The loop waits for the queue instead of skipping a cycle, so a request that
+                // woke it is never dropped because someone else held the gate at that instant.
+                await ProcessCycleAsync(cancellationToken).ConfigureAwait(false);
 
-            await WaitUntilTickAsync(nextTickUtc, cancellationToken).ConfigureAwait(false);
+                var now = DateTime.UtcNow;
+
+                if (nextTickUtc <= now)
+                {
+                    // The schedule advances by one interval per tick this loop reached, not
+                    // once per iteration: an immediate-processing request that ended the wait
+                    // early must not push the following automatic retry a whole interval
+                    // further into the future.
+                    nextTickUtc += _retryInterval;
+
+                    if (nextTickUtc <= now)
+                    {
+                        // The cycle outlasted its own tick. Wait a whole interval from here
+                        // rather than starting the next attempt immediately, so the retry
+                        // cadence never turns into back-to-back attempts.
+                        nextTickUtc = now + _retryInterval;
+                    }
+                }
+
+                await WaitUntilTickAsync(nextTickUtc, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or ObjectDisposedException))
+        {
+            RecordStatusError(ErrorText.Operations.QueueWorker, exception);
+            throw;
         }
     }
 
@@ -324,13 +349,13 @@ public sealed class QueueProcessor : IDisposable
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // The service is stopping. The attempt counter was already persisted, and
-                // the task stays pending until the next service start (requirement 14).
+                // the task stays pending until the next service start (FR-05).
                 return QueueCycleResult.Canceled(sentCount);
             }
             catch (Exception exception)
             {
                 // Failure keeps the task queued and does not touch the tasks behind it
-                // (FR-05, requirement 13).
+                // (FR-05, architecture.md §11.7).
                 TryRecordAttemptFailure(attempt.Id, exception);
                 RecordStatusError(ErrorText.Operations.SmtpSend, exception);
                 return QueueCycleResult.Failed(sentCount, ErrorText.Describe(exception));
@@ -462,7 +487,7 @@ public sealed class QueueProcessor : IDisposable
     }
 
     /// <summary>
-    /// Removes an accepted task from <c>queue.json</c> (FR-05, requirement 8).
+    /// Removes an accepted task from <c>queue.json</c> (FR-05).
     /// </summary>
     /// <returns><c>false</c> when the task was no longer present.</returns>
     private bool RemoveItem(string id)
